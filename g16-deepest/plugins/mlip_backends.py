@@ -18,6 +18,7 @@ Units returned by evaluators:
 
 from __future__ import absolute_import, division, print_function
 
+from contextlib import contextmanager
 import os
 import tempfile
 import urllib.request
@@ -116,6 +117,32 @@ def _unique_ordered(items):
 
 class BackendError(RuntimeError):
     """Raised for backend-specific runtime failures."""
+
+
+@contextmanager
+def _cpu_safe_torch_deserialize(torch_module):
+    """Make torch model deserialization safer on CPU-only hosts."""
+    had_no_weights_only = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD" in os.environ
+    old_no_weights_only = os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
+
+    jit_mod = getattr(torch_module, "jit", None)
+    old_jit_load = getattr(jit_mod, "load", None) if jit_mod is not None else None
+
+    if old_jit_load is not None:
+        def _jit_load_cpu(*args, **kwargs):
+            local_kwargs = dict(kwargs or {})
+            local_kwargs.setdefault("map_location", "cpu")
+            return old_jit_load(*args, **local_kwargs)
+
+        jit_mod.load = _jit_load_cpu
+
+    try:
+        yield
+    finally:
+        if old_jit_load is not None:
+            jit_mod.load = old_jit_load
+        if had_no_weights_only:
+            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = old_no_weights_only
 
 
 def _is_hf_access_issue(exc):
@@ -900,6 +927,14 @@ class MACEEvaluator(_BackendBase):
             model_path = str(path_or_url)
             if model_path.startswith("http://") or model_path.startswith("https://"):
                 model_path = self._download_to_tmp(model_path)
+            if str(self.device).lower() == "cpu":
+                with _cpu_safe_torch_deserialize(self._torch):
+                    return MACECalculator(
+                        model_paths=model_path,
+                        device=self.device,
+                        default_dtype=self.default_dtype,
+                        **calc_kwargs
+                    )
             return MACECalculator(
                 model_paths=model_path,
                 device=self.device,

@@ -80,6 +80,12 @@ fi
 conda activate deepest_g16
 echo "Conda env: ${CONDA_DEFAULT_ENV:-unknown}"
 
+# Keep this workflow strictly CPU on N5 nodes.
+export CUDA_VISIBLE_DEVICES=""
+# Avoid conflicting torch deserialization override variables.
+unset TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD || true
+unset TORCH_FORCE_WEIGHTS_ONLY_LOAD || true
+
 export DEEPEST_MODEL_PATH="${DEEPEST_MODEL_PATH:-/share/home/Chenlehui/.cache/DeePEST/MACE_deltaL.model}"
 if [ ! -f "$DEEPEST_MODEL_PATH" ]; then
     echo "Cannot find DeePEST model: $DEEPEST_MODEL_PATH"
@@ -138,6 +144,10 @@ xargs -r -0 -n 1 -P 4 -I {} bash -c '
     reaction_name=$(echo "$work_dir" | cut -d"/" -f1)
 
     export DEEPEST_MODEL_PATH="'"$DEEPEST_MODEL_PATH"'"
+    export CUDA_VISIBLE_DEVICES=""
+    unset TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD || true
+    unset TORCH_FORCE_WEIGHTS_ONLY_LOAD || true
+
     export OMP_NUM_THREADS=4
     export MKL_NUM_THREADS=4
     export OPENBLAS_NUM_THREADS=4

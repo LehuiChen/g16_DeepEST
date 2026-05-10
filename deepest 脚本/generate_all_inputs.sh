@@ -20,7 +20,12 @@ variant_flag=""
 if [ "${DEEPEST_VARIANT:-main}" = "t1x" ]; then
     variant_flag=' --variant t1x'
 fi
-ext_cmd="external=\"g16-mlips-deepest${variant_flag}\""
+DEEPEST_DEVICE="${DEEPEST_DEVICE:-cpu}"
+device_flag=""
+if [ -n "${DEEPEST_DEVICE}" ]; then
+    device_flag=" --device ${DEEPEST_DEVICE}"
+fi
+ext_cmd="external=\"g16-mlips-deepest${device_flag}${variant_flag}\""
 
 cd "$BASE_DIR" || exit 1
 mkdir -p "$OUTPUT_ROOT"
