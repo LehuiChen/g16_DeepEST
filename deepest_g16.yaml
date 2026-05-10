@@ -42,6 +42,7 @@ dependencies:
   - matscipy=1.2.0
   - openssl=3.6.1=h35e630c_1
   - packaging=25.0=py310h06a4308_1
+  - pandas=2.3.3
   - pip=26.0.1=pyhc872135_0
   - pthread-stubs=0.3=h0ce48e5_1
   - python=3.10.18=h1a3bd86_0
@@ -121,7 +122,6 @@ dependencies:
       - opt-einsum==3.4.0
       - opt-einsum-fx==0.1.4
       - orjson==3.11.7
-      - pandas==2.3.3
       - pillow==12.0.0
       - prettytable==3.17.0
       - proto-plus==1.27.1
