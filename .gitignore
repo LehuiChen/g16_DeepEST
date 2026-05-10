@@ -26,6 +26,9 @@ gitdata/
 *.gif
 *.png
 
-# DeePEST 权重文件只在本地/服务器使用，不进入 Git 历史
+# Keep DeePEST weights local/server-side, do not track in Git.
 upstream/DeePEST-OS/models/
 .git_with_models_history/
+
+# Large reference paper PDF is intentionally not tracked.
+Reactive Machine Learning Potential for Accelerating TransitionState Search in Organic Synthesis.pdf
