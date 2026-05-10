@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "g16-deepest"
+dynamic = ["version"]
+description = "Gaussian16 External backend for DeePEST-OS (GFN2-xTB + delta MACE)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "ase",
+]
+
+[project.optional-dependencies]
+deepest = ["torch>=2.6.0", "mace-torch"]
+
+[project.urls]
+Homepage = "https://github.com/kaipai-ren/DeePEST-OS"
+Repository = "https://github.com/kaipai-ren/DeePEST-OS"
+
+[project.scripts]
+g16-mlips-deepest = "g16_deepest_plugins.deepest_g16:main"
+deepest = "g16_deepest_plugins.deepest_g16:main"
+
+[tool.setuptools]
+packages = ["g16_deepest_plugins"]
+include-package-data = false
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+fallback_version = "1.0.0"
+
+[tool.setuptools.package-dir]
+g16_deepest_plugins = "plugins"

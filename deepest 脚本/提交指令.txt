@@ -1,0 +1,7 @@
+先测 1 个 DeePEST shard：
+qsub -v NODE_ID=1,INPUT_ROOT=DEEPEST_Inputs_All submit_all_models.pbs
+
+DeePEST 全量 8 个 shard：
+for i in 1 2 3 4 5 6 7 8; do
+    qsub -v NODE_ID=$i,INPUT_ROOT=DEEPEST_Inputs_All submit_all_models.pbs
+done

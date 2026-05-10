@@ -1,0 +1,15 @@
+先测 1 个 MACE shard：
+qsub -v NODE_ID=1,INPUT_ROOT=MACE_Inputs_All submit_all_models.pbs
+
+先测 1 个 ORB shard：
+qsub -v NODE_ID=1,INPUT_ROOT=ORB_Inputs_All submit_all_models.pbs
+
+MACE 全量 8 个 shard：
+for i in 1 2 3 4 5 6 7 8; do
+    qsub -v NODE_ID=$i,INPUT_ROOT=MACE_Inputs_All submit_all_models.pbs
+done
+
+ORB 全量 8 个 shard：
+for i in 1 2 3 4 5 6 7 8; do
+    qsub -v NODE_ID=$i,INPUT_ROOT=ORB_Inputs_All submit_all_models.pbs
+done

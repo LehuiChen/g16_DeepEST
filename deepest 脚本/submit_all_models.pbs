@@ -1,0 +1,192 @@
+#!/bin/bash
+#PBS -N DEEPEST_4core_Fleet
+#PBS -l nodes=1:ppn=32
+#PBS -l mem=60gb
+#PBS -j oe
+#PBS -q N5
+#PBS -l walltime=600:00:00
+
+set -eo pipefail
+
+BASE_DIR="/share/home/Chenlehui/work/TS_work"
+DEEPEST_ROOT="${DEEPEST_ROOT:-/share/home/Chenlehui/work/DeePEST}"
+TARGET_DIRS="4_2 Butterfly_Mechanism Click_Reaction DA Nucleophilic_Addition"
+TRACE_ROOT="$BASE_DIR/pbs_logs"
+
+mkdir -p "$TRACE_ROOT"
+
+if [ -z "${INPUT_ROOT:-}" ]; then
+    INPUT_ROOT="DEEPEST_Inputs_All"
+fi
+
+if [ -z "${NODE_ID:-}" ]; then
+    NODE_ID=1
+    TOTAL_NODES=1
+else
+    TOTAL_NODES=8
+fi
+export NODE_ID
+
+TRACE_LOG="$TRACE_ROOT/node_${NODE_ID}_${INPUT_ROOT}.trace.log"
+exec >"$TRACE_LOG" 2>&1
+
+echo "======================================================"
+echo "PBS job started at $(date '+%F %T')"
+echo "PBS_JOBID: ${PBS_JOBID:-unknown}"
+echo "NODE_ID  : ${NODE_ID}"
+echo "INPUT_ROOT: ${INPUT_ROOT}"
+echo "DEEPEST_ROOT: ${DEEPEST_ROOT}"
+echo "======================================================"
+
+trap 'status=$?; echo "[ERROR] line ${LINENO} exit ${status} at $(date +%F_%T)"; exit $status' ERR
+
+TARGET_ROOT="$BASE_DIR/$INPUT_ROOT"
+if [ ! -d "$TARGET_ROOT" ]; then
+    echo "Cannot find input root: $TARGET_ROOT"
+    exit 1
+fi
+
+cd "$TARGET_ROOT" || exit 1
+echo "Working directory: $PWD"
+
+export PERLLIB="${PERLLIB:-}"
+export PYTHONPATH="${PYTHONPATH:-}"
+export LD_LIBRARY64_PATH="${LD_LIBRARY64_PATH:-}"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+
+if source /share/apps/gaussian/g16-env.sh; then
+    echo "Gaussian env sourced cleanly"
+else
+    echo "Gaussian env source returned non-zero, continue to verify g16"
+fi
+
+if ! command -v g16 >/dev/null 2>&1; then
+    echo "g16 is not available after sourcing /share/apps/gaussian/g16-env.sh"
+    exit 1
+fi
+echo "g16 path: $(command -v g16)"
+
+if source /share/home/Chenlehui/miniconda3/etc/profile.d/conda.sh; then
+    echo "Conda env script sourced cleanly"
+else
+    echo "Conda env script source returned non-zero, continue to verify conda"
+fi
+
+if ! type conda >/dev/null 2>&1; then
+    echo "conda is not available after sourcing conda.sh"
+    exit 1
+fi
+
+conda activate deepest_g16
+echo "Conda env: ${CONDA_DEFAULT_ENV:-unknown}"
+
+export DEEPEST_MODEL_PATH="${DEEPEST_MODEL_PATH:-$DEEPEST_ROOT/upstream/DeePEST-OS/models/MACE_deltaL/MACE_deltaL.model}"
+if [ ! -f "$DEEPEST_MODEL_PATH" ]; then
+    echo "Cannot find DeePEST model: $DEEPEST_MODEL_PATH"
+    exit 1
+fi
+echo "DEEPEST_MODEL_PATH: $DEEPEST_MODEL_PATH"
+
+if ! command -v xtb >/dev/null 2>&1; then
+    echo "xtb executable is not available in deepest_g16 environment"
+    exit 1
+fi
+echo "xtb path: $(command -v xtb)"
+
+if ! command -v g16-mlips-deepest >/dev/null 2>&1; then
+    echo "g16-mlips-deepest is not available in deepest_g16 environment"
+    exit 1
+fi
+echo "deepest command: $(command -v g16-mlips-deepest)"
+
+export MLIP_TIMEOUT=86400
+export G16_MLIPS_TIMEOUT=86400
+export MLIP_SERVER_TIMEOUT=86400
+export MLIP_SERVER_IDLE_TIMEOUT=86400
+
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
+export OPENBLAS_NUM_THREADS=4
+export NUMEXPR_NUM_THREADS=4
+export TORCH_NUM_THREADS=4
+export OMP_DYNAMIC=FALSE
+export MKL_DYNAMIC=FALSE
+
+echo "======================================================"
+echo "Launch N5 batch workflow"
+echo "Node shard: ${NODE_ID} / ${TOTAL_NODES}"
+echo "Input root: ${INPUT_ROOT}"
+echo "Strategy: 4 parallel tasks, 4 threads per task"
+echo "======================================================"
+
+TASK_LIST=$(mktemp)
+find $TARGET_DIRS -name "*_1_freq.com" | sort | awk -v id="$NODE_ID" -v tot="$TOTAL_NODES" 'NR % tot == (id % tot)' | tr '\n' '\0' > "$TASK_LIST"
+TASK_COUNT=$(tr -cd '\0' < "$TASK_LIST" | wc -c | awk '{print $1}')
+
+echo "Assigned task count: ${TASK_COUNT}"
+
+if [ "$TASK_COUNT" -eq 0 ]; then
+    echo "No *_1_freq.com tasks assigned to this shard"
+    rm -f "$TASK_LIST"
+    exit 1
+fi
+
+xargs -r -0 -n 1 -P 4 -I {} bash -c '
+    step1_path="{}"
+    work_dir=$(dirname "$step1_path")
+    base_name=$(basename "$step1_path" "_1_freq.com")
+    reaction_name=$(echo "$work_dir" | cut -d"/" -f1)
+
+    export DEEPEST_MODEL_PATH="'"$DEEPEST_MODEL_PATH"'"
+    export OMP_NUM_THREADS=4
+    export MKL_NUM_THREADS=4
+    export OPENBLAS_NUM_THREADS=4
+    export NUMEXPR_NUM_THREADS=4
+    export TORCH_NUM_THREADS=4
+    export OMP_DYNAMIC=FALSE
+    export MKL_DYNAMIC=FALSE
+
+    export MLIP_TIMEOUT=86400
+    export G16_MLIPS_TIMEOUT=86400
+    export MLIP_SERVER_TIMEOUT=86400
+    export MLIP_SERVER_IDLE_TIMEOUT=86400
+
+    export GAUSS_SCRDIR="/tmp/${PBS_JOBID}_${base_name}_$$"
+    mkdir -p "$GAUSS_SCRDIR"
+
+    cd "$work_dir"
+
+    echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 1 (Freq): ${base_name}"
+    g16 < "${base_name}_1_freq.com" > "${base_name}_1_freq.log" 2>&1
+
+    if grep -q "Normal termination" "${base_name}_1_freq.log"; then
+        echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 2 (Opt): ${base_name}"
+        g16 < "${base_name}_2_opt.com" > "${base_name}_2_opt.log" 2>&1
+
+        if grep -q "Normal termination" "${base_name}_2_opt.log"; then
+            echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 3 (Freq): ${base_name}"
+            g16 < "${base_name}_3_freq.com" > "${base_name}_3_freq.log" 2>&1
+
+            if grep -q "Normal termination" "${base_name}_3_freq.log"; then
+                echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Merge logs: ${base_name}"
+                cat "${base_name}_1_freq.log" "${base_name}_2_opt.log" "${base_name}_3_freq.log" > "${base_name}_Final.log"
+                rm -f "${base_name}_1_freq.log" "${base_name}_2_opt.log" "${base_name}_3_freq.log" "${base_name}.chk"
+                echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Completed: ${base_name}"
+            else
+                echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 3 failed: ${base_name}"
+            fi
+        else
+            echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 2 failed: ${base_name}"
+        fi
+    else
+        echo "[Node ${NODE_ID} | ${reaction_name} | $(date +%H:%M:%S)] Step 1 failed: ${base_name}"
+    fi
+
+    rm -rf "$GAUSS_SCRDIR"
+' < "$TASK_LIST"
+
+rm -f "$TASK_LIST"
+
+echo "======================================================"
+echo "Node ${NODE_ID} finished all assigned tasks"
+echo "======================================================"
