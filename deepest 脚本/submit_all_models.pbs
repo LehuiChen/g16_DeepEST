@@ -80,7 +80,7 @@ fi
 conda activate deepest_g16
 echo "Conda env: ${CONDA_DEFAULT_ENV:-unknown}"
 
-export DEEPEST_MODEL_PATH="${DEEPEST_MODEL_PATH:-$DEEPEST_ROOT/upstream/DeePEST-OS/models/MACE_deltaL/MACE_deltaL.model}"
+export DEEPEST_MODEL_PATH="${DEEPEST_MODEL_PATH:-/share/home/Chenlehui/.cache/DeePEST/MACE_deltaL.model}"
 if [ ! -f "$DEEPEST_MODEL_PATH" ]; then
     echo "Cannot find DeePEST model: $DEEPEST_MODEL_PATH"
     exit 1
