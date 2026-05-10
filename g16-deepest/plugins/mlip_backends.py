@@ -122,11 +122,27 @@ class BackendError(RuntimeError):
 @contextmanager
 def _cpu_safe_torch_deserialize(torch_module):
     """Make torch model deserialization safer on CPU-only hosts."""
+    # 中文说明：PyTorch 2.6+ 默认 weights_only=True，而本项目使用的是完整模型对象存档，
+    # 在可信模型前提下需要回退到 weights_only=False 才能正确反序列化。
     had_no_weights_only = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD" in os.environ
     old_no_weights_only = os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
+    had_force_weights_only = "TORCH_FORCE_WEIGHTS_ONLY_LOAD" in os.environ
+    old_force_weights_only = os.environ.pop("TORCH_FORCE_WEIGHTS_ONLY_LOAD", None)
+
+    old_torch_load = getattr(torch_module, "load", None)
 
     jit_mod = getattr(torch_module, "jit", None)
     old_jit_load = getattr(jit_mod, "load", None) if jit_mod is not None else None
+
+    if old_torch_load is not None:
+        # 中文说明：仅在当前上下文内将未显式声明的 torch.load 改为 weights_only=False，
+        # 退出上下文后恢复原始行为，避免影响其他调用方。
+        def _torch_load_unsafe_trusted(*args, **kwargs):
+            local_kwargs = dict(kwargs or {})
+            local_kwargs.setdefault("weights_only", False)
+            return old_torch_load(*args, **local_kwargs)
+
+        torch_module.load = _torch_load_unsafe_trusted
 
     if old_jit_load is not None:
         def _jit_load_cpu(*args, **kwargs):
@@ -139,10 +155,14 @@ def _cpu_safe_torch_deserialize(torch_module):
     try:
         yield
     finally:
+        if old_torch_load is not None:
+            torch_module.load = old_torch_load
         if old_jit_load is not None:
             jit_mod.load = old_jit_load
         if had_no_weights_only:
             os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = old_no_weights_only
+        if had_force_weights_only:
+            os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = old_force_weights_only
 
 
 def _is_hf_access_issue(exc):
